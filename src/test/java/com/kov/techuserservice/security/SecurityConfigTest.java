@@ -15,7 +15,7 @@ class SecurityConfigTest {
                 new CustomUserDetailsServiceImpl(null)
         );
 
-        SecurityConfig config = new SecurityConfig(jwtFilter);
+        SecurityConfig config = new SecurityConfig(jwtFilter, new com.kov.techuserservice.observability.MdcLoggingFilter());
         assertNotNull(config);
     }
 }
