@@ -4,8 +4,10 @@ import com.kov.techuserservice.dto.page.PageResponseDTO;
 import com.kov.techuserservice.dto.role.RoleDTO;
 import com.kov.techuserservice.dto.role.RoleUpdateDTO;
 import com.kov.techuserservice.dto.user.*;
+import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.mapper.RoleMapper;
 import com.kov.techuserservice.mapper.UserMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Set;
+
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -22,6 +26,7 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final RoleMapper roleMapper;
 
     @GetMapping
     public ResponseEntity<PageResponseDTO<UserResponseDTO>> getAllUsers(Pageable pageable) {
@@ -87,7 +92,8 @@ public class UserController {
     public ResponseEntity<UserResponseDTO> assignRole(@PathVariable Long id, @Valid @RequestBody RoleUpdateDTO request) {
         return userRepository.findById(id)
                 .map(user -> {
-                    user.setRoles(null);
+                    Role role = roleMapper.toEntity(request);
+                    user.setRoles(Set.of(role));
                     User saved = userRepository.save(user);
                     return ResponseEntity.ok(userMapper.toResponse(saved));
                 })

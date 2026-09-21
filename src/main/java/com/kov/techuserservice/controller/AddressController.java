@@ -5,6 +5,7 @@ import com.kov.techuserservice.entity.Address;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.AddressRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.mapper.AddressMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,7 @@ public class AddressController {
 
     private final UserRepository userRepository;
     private final AddressRepository addressRepository;
+    private final AddressMapper addressMapper;
 
     @GetMapping
     public ResponseEntity<List<AddressDTO>> getAllAddresses(@PathVariable Long userId) {
@@ -27,7 +29,7 @@ public class AddressController {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
         List<Address> addresses = addressRepository.findByUserIdOrderByIsDefaultDesc(userId);
-        return ResponseEntity.ok(addresses.stream().map(this::toDTO).toList());
+        return ResponseEntity.ok(addresses.stream().map(addressMapper::toDTO).toList());
     }
 
     @GetMapping("/default")
@@ -38,7 +40,7 @@ public class AddressController {
         return addressRepository.findByUserIdOrderByIsDefaultDesc(userId).stream()
                 .filter(Address::isDefault)
                 .findFirst()
-                .map(this::toDTO)
+                .map(addressMapper::toDTO)
                 .map(ResponseEntity::ok)
                 .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
@@ -48,16 +50,11 @@ public class AddressController {
         if (!userRepository.existsById(userId)) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
-        Address address = new Address();
-        address.setCountry(dto.getCountry());
-        address.setCity(dto.getCity());
-        address.setStreet(dto.getStreet());
-        address.setDefault(dto.isDefault());
-        address.setLabel(dto.getLabel());
+        Address address = addressMapper.toEntity(dto);
         User user = userRepository.getReferenceById(userId);
         address.setUser(user);
         Address saved = addressRepository.save(address);
-        return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED).body(toDTO(saved));
+        return ResponseEntity.status(HttpStatus.CREATED).body(addressMapper.toDTO(saved));
     }
 
     @PutMapping("/{addressId}")
@@ -65,13 +62,11 @@ public class AddressController {
         return addressRepository.findById(addressId)
                 .filter(a -> a.getUser().getId().equals(userId))
                 .map(address -> {
-                    address.setCountry(dto.getCountry());
-                    address.setCity(dto.getCity());
-                    address.setStreet(dto.getStreet());
-                    address.setDefault(dto.isDefault());
-                    address.setLabel(dto.getLabel());
-                    Address saved = addressRepository.save(address);
-                    return ResponseEntity.ok(toDTO(saved));
+                    Address updated = addressMapper.toEntity(dto);
+                    updated.setId(address.getId());
+                    updated.setUser(address.getUser());
+                    Address saved = addressRepository.save(updated);
+                    return ResponseEntity.ok(addressMapper.toDTO(saved));
                 })
                 .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
@@ -95,19 +90,8 @@ public class AddressController {
                     addressRepository.findByUserIdOrderByIsDefaultDesc(userId).forEach(a -> a.setDefault(false));
                     address.setDefault(true);
                     Address saved = addressRepository.save(address);
-                    return ResponseEntity.ok(toDTO(saved));
+                    return ResponseEntity.ok(addressMapper.toDTO(saved));
                 })
                 .orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
-    }
-
-    private AddressDTO toDTO(Address address) {
-        AddressDTO dto = new AddressDTO();
-        dto.setId(address.getId());
-        dto.setCountry(address.getCountry());
-        dto.setCity(address.getCity());
-        dto.setStreet(address.getStreet());
-        dto.setDefault(address.isDefault());
-        dto.setLabel(address.getLabel());
-        return dto;
     }
 }
