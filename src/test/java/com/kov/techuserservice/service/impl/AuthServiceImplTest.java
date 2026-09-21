@@ -7,7 +7,6 @@ import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
-import com.kov.techuserservice.entity.repository.RoleRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
@@ -48,7 +47,7 @@ class AuthServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private RoleRepository roleRepository;
+    private com.kov.techuserservice.service.RoleService roleService;
 
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
@@ -107,9 +106,12 @@ class AuthServiceImplTest {
 
     @Test
     void register_ShouldReturnAuthResponseDTO() {
+        Role defaultRole = new Role();
+        defaultRole.setId(1L);
+        defaultRole.setName(com.kov.techuserservice.dto.enums.RoleName.USER);
         when(userRepository.existsByEmail(testUser.getEmail())).thenReturn(false);
-        when(roleRepository.findByName(com.kov.techuserservice.dto.enums.RoleName.USER))
-                .thenReturn(Optional.empty());
+        when(roleService.getOrCreate(com.kov.techuserservice.dto.enums.RoleName.USER))
+                .thenReturn(defaultRole);
         when(userRepository.save(any(User.class))).thenReturn(testUser);
         when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hashedPassword");
         when(jwtService.generateRefreshToken(anyLong(), any(Instant.class), any(Instant.class)))

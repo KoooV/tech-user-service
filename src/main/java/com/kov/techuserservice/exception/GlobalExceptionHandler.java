@@ -29,6 +29,16 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.UNAUTHORIZED, e.getMessage());
     }
 
+    @ExceptionHandler({org.springframework.security.access.AccessDeniedException.class})
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(org.springframework.security.access.AccessDeniedException e) {
+        return error(HttpStatus.FORBIDDEN, "Access denied: insufficient permissions");
+    }
+
+    @ExceptionHandler({org.springframework.security.core.AuthenticationException.class})
+    public ResponseEntity<Map<String, Object>> handleAuthentication(org.springframework.security.core.AuthenticationException e) {
+        return error(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().stream()

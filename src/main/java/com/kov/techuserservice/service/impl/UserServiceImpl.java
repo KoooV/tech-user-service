@@ -25,8 +25,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Set;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -121,9 +119,14 @@ public class UserServiceImpl implements UserService {
         User user = findUserOrThrow(id);
         Role role = roleRepository.findByName(request.getName())
                 .orElseThrow(() -> new UserNotFoundException("Role not found: " + request.getName()));
-        user.setRoles(Set.of(role));
+        // Не затираем существующие роли: роль добавляется к уже назначенным.
+        // Set.of(role) здесь был багом: immutable + потеря всех предыдущих ролей.
+        if (user.getRoles() == null) {
+            user.setRoles(new java.util.HashSet<>());
+        }
+        user.getRoles().add(role);
         User saved = userRepository.save(user);
-        log.info("Role {} assigned to user {}", request.getName(), id);
+        log.info("Role {} assigned to user {} (roles now: {})", request.getName(), id, user.getRoles().size());
         return userMapper.toResponse(saved);
     }
 

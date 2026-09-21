@@ -251,6 +251,30 @@ class UserServiceImplTest {
     }
 
     @Test
+    void assignRole_ShouldPreserveExistingRoles() {
+        Role userRole = new Role();
+        userRole.setId(1L);
+        userRole.setName(RoleName.USER);
+        testUser.setRoles(new java.util.HashSet<>(Collections.singleton(userRole)));
+
+        Role admin = new Role();
+        admin.setId(7L);
+        admin.setName(RoleName.ADMIN);
+        RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.ADMIN).build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(roleRepository.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
+        when(userRepository.save(testUser)).thenReturn(testUser);
+        when(userMapper.toResponse(testUser)).thenReturn(UserResponseDTO.builder().id(1L).build());
+
+        userService.assignRole(1L, request);
+
+        assertTrue(testUser.getRoles().contains(userRole));
+        assertTrue(testUser.getRoles().contains(admin));
+        assertEquals(2, testUser.getRoles().size());
+    }
+
+    @Test
     void assignRole_MissingRole_ShouldThrow() {
         RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.MANAGER).build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
