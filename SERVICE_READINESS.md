@@ -1,266 +1,102 @@
 # Tech User Service — Проверка готовности к развёртыванию
 
-> **Дата**: 21 сентября 2026  
-> **Статус**: ⚠️ **НЕ ГОТОВ** к production-развёртыванию  
-> **Архитектурная спецификация**: tech-store README.md  
-> **Текущая реализация**: Java 17, Spring Boot 4.1.1, PostgreSQL, MapStruct
+> **Дата**: 21 сентября 2026 (обновлено после аудита кода)
+> **Статус**: ⚠️ **ЧАСТИЧНО ГОТОВ** — ядро реализовано, до production не готов
+> **Архитектурная спецификация**: tech-store README.md (6 сервисов + Gateway)
+> **Текущая реализация**: Java 17, Spring Boot 4.1.1, PostgreSQL, MapStruct, Spring Security + JWT (jjwt 0.11.5)
+> **Примечание**: предыдущая версия этого файла утверждала отсутствие Service Layer / Security / Config — это устарело. Ветки `feature-auth`, `feature-service` уже смержены в `master` (коммиты `d29acaa`, `396e42f`, `4178ac5`).
 
 ---
 
 ## 📊 Общая оценка готовности
 
-| Компонент | Статус | Критичность |
+| Компонент | Статус | Комментарий |
 |-----------|--------|-------------|
-| Entity-модель | ✅ Готово | — |
-| Repository-слоя | ✅ Готово | — |
-| DTO и Mapper | ✅ Готово (частично) | Низкая |
-| Контроллеры | ⚠️ Скелет готов | Средняя |
-| **Service Layer** | ❌ **Отсутствует** | **Критическая** |
-| **Security / JWT** | ❌ **Полностью нереализовано** | **Критическая** |
-| **Application Config** | ❌ **Пустой** | **Критическая** |
-| Обработка ошибок | ❌ Отсутствует | Высокая |
-| Тесты | ❌ Базовые только | Высокая |
-| Docker / Compose | ⚠️ Минимально | Средняя |
-| Интеграция с другими сервисами | ❌ Не начата | Высокая |
-| Актюаторы / Мониторинг | ❌ Не настроены | Средняя |
-| Миграции БД | ❌ Отсутствуют | Высокая |
+| Entity-модель | ✅ Готово | `User`, `Address`, `Role`, `Permission`, `RefreshToken` |
+| Repository-слой | ✅ Готово | 5 репозиториев (`User`, `Address`, `Role`, `Permission`, `RefreshToken`) |
+| DTO и Mapper | ✅ Готово (почти) | 10 DTO + 4 MapStruct-маппера; нет `PermissionDTO` |
+| Контроллеры | ✅ Тонкие, делегируют в сервисы | `AuthController`, `UserController`, `AddressController` |
+| **Service Layer** | ✅ **Готово (базово)** | `AuthServiceImpl`, `UserServiceImpl`, `AddressServiceImpl`, `JwtServiceImpl` с `@Transactional` |
+| **Security / JWT** | ✅ Базово / ⚠️ Неполно | Фильтр + `SecurityConfig` есть, но нет ролевой авторизации, CORS, entry points |
+| **Application Config** | ⚠️ Минимально | Порт, datasource, jwt, springdoc есть; нет env, actuator, CORS, логирования |
+| Обработка ошибок | ⚠️ Частично | `GlobalExceptionHandler` есть, но 4 хендлера, нет `ApiError`, неверные коды |
+| Тесты | ⚠️ Только unit/mock | 13 тестовых файлов, нет интеграционных `@SpringBootTest` на контроллеры/репо |
+| Docker / Compose | ⚠️ Минимально | Только `postgres:latest` без healthcheck/volumes/app-сервиса, нет `Dockerfile` |
+| Интеграция с другими сервисами | ❌ Не начата | Нет Feign, Eureka, RabbitMQ/Kafka, Resilience4j (grep — 0 совпадений) |
+| Актуатор / Мониторинг | ❌ Не настроен | В `pom.xml` только `actuator-test` + `prometheus`, нет `spring-boot-starter-actuator` и exposure |
+| Миграции БД | ❌ Отсутствуют | Нет Flyway/Liquibase, `ddl-auto=update`, нет сида ролей |
 
 ---
 
-## ❌ Что НЕ готово (отсутствует до полной реализации)
+## ✅ Что уже готово (подтверждено кодом)
 
-### 1. 🔐 Service Layer (КРИТИЧЕСКАЯ)
-
-**Проблема**: Полное отсутствие слоя сервисов. Вся бизнес-логика дублирована в контроллерах.
-
-**Что нужно создать**:
-- `UserService` — регистрация, получение профилей, обновление, управление ролями
-- `AuthService` — вход, refresh токен, logout, валидация
-- `AddressService` — CRUD адресов, управление дефолтным адресом
-- `RoleService` — управление ролями и правами
-- `PermissionService` — управление пермишенами
-
-**Влияние**: Без service layer невозможно:
-- Тестировать бизнес-логику отдельно от контроллеров
-- Реализовать транзакционность (`@Transactional`)
-- Поддерживать DDD и разделение ответственности
-- Добавлять кэширование, retry, circuit breaker
+| Компонент | Файлы |
+|-----------|-------|
+| Контроллеры (тонкие) | `controller/AuthController.java` (register/login/refresh/logout/me), `controller/UserController.java` (CRUD + role/active/reset), `controller/AddressController.java` (CRUD + default) |
+| Сервисы | `service/impl/AuthServiceImpl.java` (register/authenticate/refresh/logout, ротация `tokenVersion`), `service/impl/UserServiceImpl.java`, `service/impl/AddressServiceImpl.java` (default-адрес, проверка принадлежности), `service/impl/JwtServiceImpl.java` |
+| Security | `security/SecurityConfig.java` (stateless, `/api/auth/**` permitAll), `security/JwtAuthenticationFilter.java`, `security/CustomUserDetailsServiceImpl.java`, `security/PasswordEncoderImpl.java`, `security/JwtConfig.java`, `AuthenticationManager` bean |
+| Конфиг | `src/main/resources/application.properties` — `server.port=8001`, datasource `mydatabase`, `jwt.secret`, `jwt.*-expiration-ms`, springdoc |
+| Ошибки | `exception/GlobalExceptionHandler.java` (`UserNotFound`, `AddressNotFound`, `Security/BadCredentials`, `MethodArgumentNotValid`), `UserNotFoundException`, `AddressNotFoundException`, `SecurityException` |
+| DTO/MapStruct | `UserRequest/ResponseDTO`, `UpdateUserRequestDTO`, `AuthRequest/ResponseDTO`, `AuthRefreshRequestDTO`, `AddressDTO`, `RoleDTO`, `RoleUpdateDTO`, `PageResponseDTO`; мапперы `UserMapper`, `AuthMapper`, `AddressMapper`, `RoleMapper` |
+| Тесты (13 файлов) | `service/impl/*Test` (User/Auth/Address/Jwt), `security/*Test`, `controller/AuthControllerTest` (mockito `standaloneSetup`), `exception/ExceptionTest` |
+| `pom.xml` | Security, Data JPA, WebMVC, validation, jjwt, springdoc, postgres, lombok, mapstruct, testcontainers |
+| `compose.yaml` | Минимальный Postgres (`mydatabase/myuser/secret`, порт 5432) |
 
 ---
 
-### 2. 🔐 Security Configuration (КРИТИЧЕСКАЯ)
+## ❌ Что осталось до полной реализации
 
-**Проблема**: Spring Security зависим в `pom.xml`, но **ни одного класса конфигурации нет**.
+### P0 — Безопасность и корректность (блокирует production)
 
-**Что нужно создать**:
-- `SecurityConfig` — `SecurityFilterChain` bean, настройка авторизации
-- `JwtAuthenticationFilter` — фильтр для извлечения и валидации JWT
-- `JwtUtil` — генерация/валидация токенов
-- `CustomUserDetailsService` — загрузка пользователя из БД
-- `PasswordEncoder` bean — BCrypt для хеширования паролей
-- `AuthenticationManager` конфигурация
+1. **Ролевая авторизация отсутствует**
+   - Нет `@EnableMethodSecurity`, нет `@PreAuthorize` — любой `authenticated` может вызывать `PUT /api/users/{id}/role`, `PUT .../active`, `DELETE` (см. `UserController.java:47-55`, `SecurityConfig.java:30-35`).
+   - Нужно: разделить `USER` (только свой профиль/адреса) vs `MANAGER`/`ADMIN` (назначение ролей, блокировка, листинг).
+2. **`assignRole` затирает роли** — `UserServiceImpl.java:124` `Set.of(role)`. Нужно merge/add-remove + отдельный `RoleService`/`PermissionService` (сейчас их нет).
+3. **Миграции + сиды отсутствуют** — `ddl-auto=update`, Flyway/Liquibase нет. `AuthServiceImpl.java:71-74`: если роли `USER` нет в БД, пользователь сохранится с пустым `roles`. Нужно: `V1__init.sql` + `V2__seed_roles.sql` (`USER, MANAGER, ADMIN` + permissions), в prod `ddl-auto=validate`.
+4. **Конфиг не production-ready** — секреты захардкожены в `application.properties:5-11`. Нужно: env-переменные (`${DB_URL}`, `${DB_USER}`, `${JWT_SECRET}`), `management.*`, CORS, уровни логирования, `spring.jpa.open-in-view=false`.
 
-**Текущее состояние**: `AuthController.login()` возвращает **хардкодированные строки** `"access-token"`, `"refresh-token"` вместо реальных JWT.
+### P1 — Контракты ошибок и мелочи логики
 
-**Влияние**: Аутентификация **полностью неработоспособна**. Никакой защищённой авторизации не существует.
+5. **`GlobalExceptionHandler.java:17-47` неполный**: `DuplicateEmail` бросается как `SecurityException` → `401` вместо `409`; нет `AccessDeniedException`/`AuthenticationException` (403/401 JSON), `ConstraintViolationException`, `EntityNotFound` generic; возвращает `Map` вместо `ApiError` DTO; показывает только первую ошибку валидации.
+6. **`resetPassword` — заглушка** — `UserServiceImpl.java:142-149` только отзывает refresh-токены. Нет генерации/отправки пароля (зона notification-сервиса — зафиксировать контракт).
+7. **`RefreshToken` в `model/`, а не `entity/`** — перенести для консистентности; проверить каскады при `deleteUser` (удалятся ли токены/адреса).
+8. **`SecurityConfig`**: нет `AuthenticationEntryPoint`/`AccessDeniedHandler`, нет CORS (`corsCustomizer`), actuator-матчеры не описаны.
 
----
+### P1 — Тесты и упаковка
 
-### 3. 📝 Application Configuration (КРИТИЧЕСКАЯ)
+9. **Тесты только mock**: `AuthControllerTest.java:44` — `standaloneSetup`, без Spring-контекста. Нет: `UserControllerTest`, `AddressControllerTest`, `SecurityTest` с реальным JWT (401/403/refresh/reuse), `@DataJpaTest`/Testcontainers репозиторных тестов (зависимости уже есть), `@SpringBootTest` happy-path register→login→me→refresh→logout.
+10. **Docker**: `compose.yaml` — нет `healthcheck`, `volumes`, сервиса приложения, `.env`. Нет `Dockerfile`/Jib. До полного `tech-store` нужен root `docker-compose.yml` (Postgres x4 + Mongo + RabbitMQ + Eureka + Gateway + 6 сервисов).
 
-**Проблема**: `application.properties` содержит только `spring.application.name=tech-user-service`.
+### P2 — Наблюдаемость
 
-**Что нужно добавить**:
-```properties
-# DataSource
-spring.datasource.url=
-spring.datasource.username=
-spring.datasource.password=
-spring.jpa.hibernate.ddl-auto=
-spring.jpa.show-sql=
+11. **Actuator/метрики/логи**: в `pom.xml` нет `spring-boot-starter-actuator` (только `actuator-test`), в properties нет `management.endpoints.web.exposure.include=health,info,metrics,prometheus`, нет `health.show-details`, logback-конфига, OpenAPI-группировки, трассировки (`userId` в MDC).
 
-# JWT
-jwt.secret=
-jwt.expiration=
-jwt.refresh-expiration=
+### P3 — Межсервисная интеграция (0%, весь tech-store)
 
-# Server
-server.port=8001
-
-# Actuator
-management.endpoints.web.exposure.include=
-management.endpoint.health.show-details=
-
-# OpenAPI
-springdoc.api-docs.path=
-springdoc.swagger-ui.path=
-
-# CORS
-```
-
-**Влияние**: Приложение **не может подключиться к базе данных**, не знает свой порт, не имеет JWT-настроек.
+12. **Ничего не начато** (подтверждено grep + `pom.xml`): нет OpenFeign-клиентов (`Order/Inventory/Payment/Catalog`), нет `spring-cloud-starter-netflix-eureka-client`, нет `spring-amqp`/`spring-kafka` (`RabbitMQConfig`, `OrderCreatedEvent` и т.д.), нет Resilience4j, Config Client.
+13. **Другие сервисы отсутствуют полностью**: `tech-catalog-service` (8002/Mongo), `tech-inventory-service` (8003), `tech-order-service` (8004), `tech-payment-service` (8005), `tech-review-service` (8006), `tech-api-gateway` (8000), `tech-common-*`, `kubernetes/`. В репозитории есть только `tech-user-service`; `tech-store/` содержит только `README.md`.
 
 ---
 
-### 4. 🚨 Global Exception Handler (ВЫСОКАЯ)
-
-**Проблема**: Нет `@ControllerAdvice` или любого обработчика ошибок.
-
-**Что нужно создать**:
-- `GlobalExceptionHandler` — перехват `EntityNotFoundException`, `ConstraintViolationException`, `MethodArgumentNotValidException` и т.д.
-- `ApiError` DTO — структура ответов об ошибках
-- Кастомные исключения: `UserNotFoundException`, `DuplicateEmailException`, `InvalidCredentialsException`, `AuthorizationException`
-
-**Влияние**: Ошибки возвращаются в неструктурированном виде, нет единого формата ответов.
-
----
-
-### 5. 🧪 Тесты (ВЫСОКАЯ)
-
-**Проблема**: Только 3 файла, проверяющих загрузку Spring-контекста. Нет реальных тестов.
-
-**Что нужно создать**:
-- `UserServiceTest` — юнит-тесты сервисов
-- `AuthControllerTest` — интеграционные тесты эндпоинтов
-- `UserControllerTest` — тесты CRUD
-- `AddressControllerTest` — тесты адресов
-- `SecurityTest` — тесты авторизации
-- `RepositoryTest` — тесты репозиториев (с Testcontainers)
-- `AuthServiceTest` — тесты аутентификации
-
-**Влияние**: Невозможно убедиться в корректности работы, нет regression coverage.
-
----
-
-### 6. 🐳 Docker Compose (СРЕДНЯЯ)
-
-**Проблема**: `compose.yaml` содержит только базовый PostgreSQL без переменных окружения и зависимостей.
-
-**Что нужно добавить**:
-- Переменные окружения для подключения Spring Boot к БД
-- Health checks для PostgreSQL
-- Network configuration
-- Зависимости для запуска всех 6 сервисов (по README: Eureka, RabbitMQ, MongoDB, API Gateway)
-- Volumes для persistency данных
-- Определение всех сервисов (tech-user-service, tech-catalog-service и т.д.)
-
-**Влияние**: Нельзя поднять полную систему из одного `docker-compose up -d`.
-
----
-
-### 7. 🔄 Интеграция с другими сервисами (ВЫСОКАЯ)
-
-**Проблема**: Не реализовано ни одного межсервисного взаимодействия.
-
-**Что нужно создать**:
-- **OpenFeign клиенты** для вызова других сервисов:
-  - `CatalogClient` — получение информации о товарах
-  - `OrderClient` — создание/получение заказов
-  - `PaymentClient` — создание платежей
-  - `InventoryClient` — резервирование остатков
-- **RabbitMQ конфигурация**:
-  - `RabbitMQConfig` — exchange, queue, binding declarations
-  - `OrderCreatedEventListener` — прослушивание событий заказов
-- **Eureka Client** — регистрация сервиса в Service Discovery
-
-**Влияние**: Сервис полностью изолирован и не участвует в микросервисной архитектуре.
-
----
-
-### 8. 📦 Database Migrations (ВЫСОКАЯ)
-
-**Проблема**: Нет Flyway или Liquibase. Схема БД создаётся автоматически (или вообще не создаётся).
-
-**Что нужно создать**:
-- Flyway/Liquibase скрипты для инициализации схемы
-- Seed data для ролей и пермишенов (USER, MANAGER, ADMIN)
-- Миграции для production-окружений
-
-**Влияние**: Нет способа контролировать версии схемы БД, невозможно разворачивать в production.
-
----
-
-### 9. 📊 Actuator и Мониторинг (СРЕДНЯЯ)
-
-**Проблема**: Зависимости присутствуют в `pom.xml`, но ни одного настроенного эндпоинта.
-
-**Что нужно добавить**:
-- `management.endpoints.web.exposure.include=health,info,metrics`
-- Health indicators для БД и RabbitMQ
-- Prometheus метрики
-- Логирование (SLF4J + Logback конфигурация)
-
----
-
-### 10. ✅ DTO — частичная готовность
-
-**Что готово**: Большинство DTO созданы (`UserRequestDTO`, `UserResponseDTO`, `AuthRequestDTO`, `AuthResponseDTO`, `AddressDTO`, `RoleDTO`, `RoleUpdateDTO`, `UpdateUserRequestDTO`, `AuthRefreshRequestDTO`, `PageResponseDTO`)
-
-**Что не готово**:
-- `AuthRefreshRequestDTO` существует, но нет логики обработки refresh-токена
-- Нет `PhoneDTO` (хотя телефон упомянут в `UserRequestDTO`)
-- Нет `PermissionDTO` для полноценной работы с permissions
-
----
-
-### 11. 🏗️ Контроллеры — скелет (СРЕДНЯЯ)
-
-Контроллеры написаны, но содержат баги и неполноценную логику:
-
-**Проблемы в `UserController`**:
-- `updateUser()` вручную заполняет поля вместо использования `UserMapper.updateFromDto()`
-- `assignRole()` заменяет все роли `Set.of(role)` (теряются существующие)
-- `getAllUsers()` вручную конструирует `PageResponseDTO` вместо маппера
-- Нет `@Transactional` на write-операциях
-
-**Проблемы в `AuthController`**:
-- `login()` не аутентифицирует через `AuthenticationManager`
-- `resetPassword()` — пустой stub, возвращает OK без логики
-- Нет реальной генерации JWT
-
----
-
-## ✅ Что уже готово
-
-| Компонент | Описание |
-|-----------|----------|
-| Entity-модель | `User`, `Address`, `Role`, `Permission` — корректные JPA-сущности |
-| Repository | Все 4 JpaRepository с кастомными query-методами |
-| DTO | 10 DTO-классов с Jakarta Validation аннотациями |
-| MapStruct Mapper | 4 маппер-интерфейса с сгенерированными реализациями |
-| Контроллеры | 3 контроллера с эндпоинтами (скелет) |
-| `pom.xml` | Все зависимости описаны (Spring Security, Data JPA, OpenAPI, Actuator, и т.д.) |
-| `compose.yaml` | Минимальная PostgreSQL конфигурация |
-| Структура проекта | Корректная Maven-структура с пакетами |
-
----
-
-## 📋 План реализации (приоритеты)
+## 📋 План реализации (обновлённый)
 
 | Приоритет | Задача | Оценка |
 |-----------|--------|--------|
-| **P0** | Создать `application.properties` с конфигурацией БД, JWT, портов | 1 день |
-| **P0** | Реализовать `SecurityConfig` + `JwtUtil` + `JwtAuthenticationFilter` + `CustomUserDetailsService` | 2-3 дня |
-| **P0** | Создать `PasswordEncoder` bean | 1 час |
-| **P0** | Создать `AuthService` с реальной аутентификацией и генерацией JWT | 2 дня |
-| **P0** | Создать `UserService`, `AddressService`, `RoleService` | 2-3 дня |
-| **P1** | `GlobalExceptionHandler` + кастомные исключения | 1 день |
-| **P1** | Фикс багов в контроллерах (mapper usage, транзакции) | 1 день |
-| **P1** | Flyway миграции + seed data | 1 день |
-| **P2** | `GlobalExceptionHandler` + `ApiError` DTO | — |
-| **P2** | Тесты (юнит + интеграционные) | 3-5 дней |
-| **P2** | `compose.yaml` — полная конфигурация всех сервисов | 2 дня |
-| **P3** | OpenFeign клиенты для межсервисного взаимодействия | 3-5 дней |
-| **P3** | RabbitMQ конфигурация и event listeners | 3-5 дней |
-| **P3** | Eureka Client регистрация | 1 день |
-| **P3** | Actuator, метрики, логирование | 1 день |
+| **P0** | `@EnableMethodSecurity` + `@PreAuthorize` на роли/актив/удаление + тесты 403 | 1 день |
+| **P0** | Flyway + `V1__init` + `V2__seed_roles` + `ddl-auto=validate` | 1 день |
+| **P0** | Env-конфиг (`DB_*`, `JWT_SECRET`), CORS, entry points 401/403 | 1 день |
+| **P0** | Фикс `assignRole` (merge вместо `Set.of`) + `RoleService` | 0.5 дня |
+| **P1** | `ApiError` DTO + коды (`409` duplicate, `403`, `400` полный список) | 1 день |
+| **P1** | `Dockerfile` + `compose.yaml` (healthcheck, volume, app-сервис) | 0.5 дня |
+| **P1** | Интеграционные тесты (MockMvc+jwt, Testcontainers для репозиториев) + `User/AddressControllerTest` | 3-5 дней |
+| **P2** | `spring-boot-starter-actuator` + `management.*` + Prometheus + logback/MDC | 1 день |
+| **P3** | Eureka Client + Feign + RabbitMQ events + Resilience4j | 1-2 недели |
+| **P3** | Остальные 5 сервисов + Gateway + common + root compose + K8s | 3-4 недели |
 
 ---
 
 ## 🎯 Заключение
 
-**Текущий tech-user-service** — это скелет с сущностями и репозиториями. **Ни один эндпоинт не работает корректно** без реализации Service Layer и Security Configuration. Без JWT-аутентификации весь функционал регистрации/авторизации неработоспособен. Без конфигурации БД приложение вообще не запустится.
+**`tech-user-service` (~70%)**: ядро (сервисы, JWT-аутентификация, refresh-ротация, CRUD адресов, базовые тесты) работает. До production-минимума остались: ролевой доступ, Flyway-сиды, env/CORS/401-403, `ApiError`-коды, Docker-упаковка — **~1–1.5 недели**. Полная готовность с интеграционными тестами и наблюдаемостью — **~2–3 недели**.
 
-**Минимальный набор для запуска**: Service Layer + Security Config + Application Properties + PasswordEncoder = **~7-10 дней** разработки.
-
-**Полная реализация** (включая интеграцию, тесты, мониторинг): **~3-4 недели**.
+**Весь `tech-store` (~15%)**: реализован только User Service. Без 5 сервисов, Gateway, общих модулей, брокера и discovery система не собирается — **~4–6 недель** после добивки User Service.

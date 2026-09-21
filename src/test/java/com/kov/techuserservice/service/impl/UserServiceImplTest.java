@@ -9,12 +9,12 @@ import com.kov.techuserservice.dto.user.UserResponseDTO;
 import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
-import com.kov.techuserservice.entity.repository.RoleRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
+import com.kov.techuserservice.service.RoleService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,7 +44,7 @@ class UserServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private RoleRepository roleRepository;
+    private RoleService roleService;
 
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
@@ -233,14 +233,14 @@ class UserServiceImplTest {
     }
 
     @Test
-    void assignRole_ExistingRole_ShouldReplaceRoles() {
+    void assignRole_ExistingRole_ShouldAddRole() {
         Role admin = new Role();
         admin.setId(7L);
         admin.setName(RoleName.ADMIN);
         RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.ADMIN).build();
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-        when(roleRepository.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
+        when(roleService.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
         when(userRepository.save(testUser)).thenReturn(testUser);
         when(userMapper.toResponse(testUser)).thenReturn(UserResponseDTO.builder().id(1L).build());
 
@@ -263,7 +263,7 @@ class UserServiceImplTest {
         RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.ADMIN).build();
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-        when(roleRepository.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
+        when(roleService.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
         when(userRepository.save(testUser)).thenReturn(testUser);
         when(userMapper.toResponse(testUser)).thenReturn(UserResponseDTO.builder().id(1L).build());
 
@@ -278,9 +278,66 @@ class UserServiceImplTest {
     void assignRole_MissingRole_ShouldThrow() {
         RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.MANAGER).build();
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-        when(roleRepository.findByName(RoleName.MANAGER)).thenReturn(Optional.empty());
+        when(roleService.findByName(RoleName.MANAGER)).thenReturn(Optional.empty());
 
         assertThrows(UserNotFoundException.class, () -> userService.assignRole(1L, request));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void removeRole_ExistingRole_ShouldRemoveOnlyThatRole() {
+        Role userRole = new Role();
+        userRole.setId(1L);
+        userRole.setName(RoleName.USER);
+        Role admin = new Role();
+        admin.setId(7L);
+        admin.setName(RoleName.ADMIN);
+        testUser.setRoles(new java.util.HashSet<>(java.util.Set.of(userRole, admin)));
+        RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.ADMIN).build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(roleService.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
+        when(userRepository.save(testUser)).thenReturn(testUser);
+        when(userMapper.toResponse(testUser)).thenReturn(UserResponseDTO.builder().id(1L).build());
+
+        userService.removeRole(1L, request);
+
+        assertTrue(testUser.getRoles().contains(userRole));
+        assertFalse(testUser.getRoles().contains(admin));
+        assertEquals(1, testUser.getRoles().size());
+        verify(userRepository, times(1)).save(testUser);
+    }
+
+    @Test
+    void removeRole_LastRole_ShouldThrow() {
+        Role userRole = new Role();
+        userRole.setId(1L);
+        userRole.setName(RoleName.USER);
+        testUser.setRoles(new java.util.HashSet<>(Collections.singleton(userRole)));
+        RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.USER).build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(roleService.findByName(RoleName.USER)).thenReturn(Optional.of(userRole));
+
+        assertThrows(SecurityException.class, () -> userService.removeRole(1L, request));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void removeRole_RoleNotAssigned_ShouldThrow() {
+        Role userRole = new Role();
+        userRole.setId(1L);
+        userRole.setName(RoleName.USER);
+        testUser.setRoles(new java.util.HashSet<>(Collections.singleton(userRole)));
+        Role admin = new Role();
+        admin.setId(7L);
+        admin.setName(RoleName.ADMIN);
+        RoleUpdateDTO request = RoleUpdateDTO.builder().name(RoleName.ADMIN).build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(roleService.findByName(RoleName.ADMIN)).thenReturn(Optional.of(admin));
+
+        assertThrows(UserNotFoundException.class, () -> userService.removeRole(1L, request));
         verify(userRepository, never()).save(any());
     }
 

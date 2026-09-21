@@ -69,9 +69,13 @@ public class SecurityConfig {
                         // Привилегированные операции с пользователями — только ADMIN/MANAGER.
                         // Дубль защиты: дополнительно @PreAuthorize на контроллере.
                         .requestMatchers(HttpMethod.PUT, "/api/users/*/role").hasAnyRole("ADMIN", "MANAGER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/users/*/role").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.PUT, "/api/users/*/active").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.POST, "/api/users/*/reset-password").hasAnyRole("ADMIN", "MANAGER")
                         .requestMatchers(HttpMethod.DELETE, "/api/users/*").hasAnyRole("ADMIN", "MANAGER")
+                        // Адреса: свой профиль (USER) или MANAGER/ADMIN.
+                        // Тонкая проверка владельца — @PreAuthorize в AddressController.
+                        .requestMatchers("/api/users/*/addresses/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users", "/api/users/*").authenticated()
                         .requestMatchers("/api/users/**").authenticated()
                         .anyRequest().authenticated()
