@@ -5,55 +5,39 @@ import com.kov.techuserservice.dto.auth.AuthRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthResponseDTO;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.dto.user.UserResponseDTO;
-import com.kov.techuserservice.mapper.AuthMapper;
 import com.kov.techuserservice.mapper.UserMapper;
-import com.kov.techuserservice.entity.User;
-import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Collections;
 
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final UserRepository userRepository;
+    private final AuthService authService;
     private final UserMapper userMapper;
-    private final AuthMapper authMapper;
-    private final PasswordEncoder passwordEncoder;
-    private final AuthenticationManager authenticationManager;
 
     @PostMapping("/register")
-    public ResponseEntity<UserResponseDTO> register(@Valid @RequestBody UserRequestDTO request) {
-        User user = userMapper.toEntity(request);
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setActive(true);
-        user.setRoles(Collections.emptySet());
-        User saved = userRepository.save(user);
-        return ResponseEntity.status(HttpStatus.CREATED).body(userMapper.toResponse(saved));
+    public ResponseEntity<AuthResponseDTO> register(@Valid @RequestBody UserRequestDTO request) {
+        AuthResponseDTO response = authService.register(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponseDTO> login(@Valid @RequestBody AuthRequestDTO request) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
-        );
-        AuthResponseDTO response = authMapper.toAuthResponse("access-token", "refresh-token", "Bearer", 3600L);
+        AuthResponseDTO response = authService.authenticate(request);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponseDTO> refreshToken(@Valid @RequestBody AuthRefreshRequestDTO request) {
-        AuthResponseDTO response = authMapper.toAuthResponse("new-access-token", request.getRefreshToken(), "Bearer", 3600L);
+        AuthResponseDTO response = authService.refreshToken(request);
         return ResponseEntity.ok(response);
     }
 
@@ -63,8 +47,12 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponseDTO> getMe(Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
+    public ResponseEntity<UserResponseDTO> getMe() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        com.kov.techuserservice.entity.User user = (com.kov.techuserservice.entity.User) authentication.getPrincipal();
         return ResponseEntity.ok(userMapper.toResponse(user));
     }
 }
