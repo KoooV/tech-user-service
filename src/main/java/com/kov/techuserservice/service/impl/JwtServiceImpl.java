@@ -4,7 +4,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,7 +13,6 @@ import com.kov.techuserservice.service.JwtService;
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.util.Date;
-import java.util.Map;
 import java.util.function.Function;
 
 @Slf4j
@@ -25,20 +23,16 @@ public class JwtServiceImpl implements JwtService {
     private final JwtConfig jwtConfig;
     private SecretKey secretKey;
 
-    @PostConstruct
-    void init() {
-        byte[] keyBytes = Decoders.BASE64.decode(jwtConfig.getSecret());
-        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
-    }
-
     @Override
-    public <T> T extractClaim(String token, Function<Map<String, Object>, T> claimsResolver) {
+    public synchronized <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+        ensureSecretKey();
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
     @Override
-    public Claims extractAllClaims(String token) {
+    public synchronized Claims extractAllClaims(String token) {
+        ensureSecretKey();
         return Jwts.parserBuilder()
                 .setSigningKey(secretKey)
                 .build()
@@ -47,7 +41,8 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
-    public String generateAccessToken(Long userId, String role, Instant now, Instant expiration) {
+    public synchronized String generateAccessToken(Long userId, String role, Instant now, Instant expiration) {
+        ensureSecretKey();
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
                 .claim("role", role)
@@ -58,7 +53,8 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
-    public String generateRefreshToken(Long userId, Instant now, Instant expiration) {
+    public synchronized String generateRefreshToken(Long userId, Instant now, Instant expiration) {
+        ensureSecretKey();
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
                 .setIssuedAt(Date.from(now))
@@ -68,7 +64,8 @@ public class JwtServiceImpl implements JwtService {
     }
 
     @Override
-    public boolean tokenIsValid(String token) {
+    public synchronized boolean tokenIsValid(String token) {
+        ensureSecretKey();
         try {
             Jwts.parserBuilder()
                     .setSigningKey(secretKey)
@@ -78,6 +75,13 @@ public class JwtServiceImpl implements JwtService {
         } catch (Exception e) {
             log.warn("Invalid jwt token: {}", e.getMessage());
             return false;
+        }
+    }
+
+    private void ensureSecretKey() {
+        if (secretKey == null) {
+            byte[] keyBytes = Decoders.BASE64.decode(jwtConfig.getSecret());
+            this.secretKey = Keys.hmacShaKeyFor(keyBytes);
         }
     }
 }

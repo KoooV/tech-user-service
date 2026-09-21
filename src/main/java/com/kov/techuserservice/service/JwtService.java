@@ -2,12 +2,11 @@ package com.kov.techuserservice.service;
 
 import io.jsonwebtoken.Claims;
 import java.time.Instant;
-import java.util.Map;
 import java.util.function.Function;
 
 public interface JwtService {
 
-    <T> T extractClaim(String token, Function<Map<String, Object>, T> claimsResolver);
+    <T> T extractClaim(String token, Function<Claims, T> claimsResolver);
 
     Claims extractAllClaims(String token);
 

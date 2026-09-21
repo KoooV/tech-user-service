@@ -10,6 +10,9 @@ public class PasswordEncoderImpl implements PasswordEncoder {
 
     @Override
     public String encode(CharSequence rawPassword) {
+        if(rawPassword == null){
+            throw new IllegalArgumentException("Password cannot be null");
+        }
         return encoder.encode(rawPassword);
     }
 
