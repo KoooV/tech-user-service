@@ -89,10 +89,25 @@ public class User implements UserDetails {
     /** Возвращает совокупность разрешений (authorities) пользователя, полученных из всех назначенных ролей. Используется Spring Security для проверки прав доступа. */
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return roles.stream()
-            .flatMap(role -> role.getPermissions().stream())
-            .map(permission -> new SimpleGrantedAuthority(permission.getName()))
-            .toList();
+        if (roles == null || roles.isEmpty()) {
+            return List.of();
+        }
+        Set<GrantedAuthority> authorities = new HashSet<>();
+        for (var role : roles) {
+            if (role == null || role.getName() == null) {
+                continue;
+            }
+            // ROLE_* нужен для hasRole()/hasAnyRole() (@PreAuthorize, SecurityConfig).
+            authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getName().name()));
+            if (role.getPermissions() != null) {
+                for (var permission : role.getPermissions()) {
+                    if (permission != null && permission.getName() != null && !permission.getName().isBlank()) {
+                        authorities.add(new SimpleGrantedAuthority(permission.getName()));
+                    }
+                }
+            }
+        }
+        return authorities;
     }
 
     /** Возвращает email пользователя в качестве имени пользователя для Spring Security (логин). */

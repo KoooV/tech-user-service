@@ -5,9 +5,9 @@ import com.kov.techuserservice.dto.auth.AuthRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthResponseDTO;
 import com.kov.techuserservice.dto.enums.RoleName;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
+import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
-import com.kov.techuserservice.entity.repository.RoleRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
@@ -16,6 +16,7 @@ import com.kov.techuserservice.model.RefreshToken;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
 import com.kov.techuserservice.service.AuthService;
 import com.kov.techuserservice.service.JwtService;
+import com.kov.techuserservice.service.RoleService;
 import com.kov.techuserservice.security.JwtConfig;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +39,7 @@ import java.util.HashSet;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
+    private final RoleService roleService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuthMapper authMapper;
     private final PasswordEncoderImpl passwordEncoder;
@@ -68,10 +69,10 @@ public class AuthServiceImpl implements AuthService {
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setActive(true);
-        roleRepository.findByName(RoleName.USER).ifPresentOrElse(
-                role -> user.setRoles(new HashSet<>(java.util.Set.of(role))),
-                () -> user.setRoles(new HashSet<>())
-        );
+        // Роль USER гарантированно существует: Flyway-сид (V2) + RoleDataSeeder + getOrCreate fallback.
+        // Пользователь никогда не сохраняется с пустым roles.
+        Role defaultRole = roleService.getOrCreate(RoleName.USER);
+        user.setRoles(new HashSet<>(java.util.Set.of(defaultRole)));
         User saved = userRepository.save(user);
 
         Instant now = Instant.now();
