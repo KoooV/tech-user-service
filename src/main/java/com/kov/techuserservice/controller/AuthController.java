@@ -5,14 +5,12 @@ import com.kov.techuserservice.dto.auth.AuthRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthResponseDTO;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.dto.user.UserResponseDTO;
-import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.service.AuthService;
+import com.kov.techuserservice.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -21,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
-    private final UserMapper userMapper;
+    private final UserService userService;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponseDTO> register(@Valid @RequestBody UserRequestDTO request) {
@@ -43,16 +41,12 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
+        authService.logout(authService.getCurrentUserId());
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserResponseDTO> getMe() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        com.kov.techuserservice.entity.User user = (com.kov.techuserservice.entity.User) authentication.getPrincipal();
-        return ResponseEntity.ok(userMapper.toResponse(user));
+        return ResponseEntity.ok(userService.getCurrentUser());
     }
 }
