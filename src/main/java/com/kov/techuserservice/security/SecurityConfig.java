@@ -1,11 +1,15 @@
 package com.kov.techuserservice.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kov.techuserservice.dto.error.ApiError;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -14,13 +18,13 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 
@@ -30,6 +34,8 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
@@ -55,15 +61,24 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex
-                        // Нет/невалидный JWT -> 401 вместо 403
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
-                        // Authenticated, но без роли -> 403
-                        .accessDeniedHandler(new AccessDeniedHandlerImpl())
+                        // Нет/невалидный JWT -> 401 JSON (ApiError, тот же формат что в GlobalExceptionHandler)
+                        .authenticationEntryPoint((request, response, authException) ->
+                                writeApiError(response, HttpStatus.UNAUTHORIZED,
+                                        authException != null && authException.getMessage() != null
+                                                ? authException.getMessage()
+                                                : "Unauthorized: authentication required",
+                                        request.getRequestURI()))
+                        // Authenticated, но без роли -> 403 JSON
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                writeApiError(response, HttpStatus.FORBIDDEN,
+                                        "Access denied: insufficient permissions",
+                                        request.getRequestURI()))
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-                        // Actuator: health/info открыты для probes, остальное только за ролями
+                        // Actuator: health/info открыты для probes, остальное только за ролями.
+                        // exposure управляется свойством management.endpoints.web.exposure.include.
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "MANAGER")
                         // Привилегированные операции с пользователями — только ADMIN/MANAGER.
@@ -83,6 +98,21 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return httpSecurity.build();
+    }
+
+    private void writeApiError(HttpServletResponse response, HttpStatus status,
+                               String message, String path) throws IOException {
+        ApiError body = ApiError.builder()
+                .timestamp(Instant.now())
+                .status(status.value())
+                .error(status.name())
+                .message(message)
+                .path(path)
+                .build();
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        objectMapper.writeValue(response.getWriter(), body);
     }
 
     @Bean
@@ -105,6 +135,8 @@ public class SecurityConfig {
                     .toList());
         }
         configuration.setAllowCredentials(allowCredentials);
+        // Кэш preflight, чтобы не дёргать OPTIONS на каждый запрос.
+        configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

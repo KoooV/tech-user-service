@@ -1,6 +1,6 @@
 package com.kov.techuserservice.entity.repository;
 
-import com.kov.techuserservice.model.RefreshToken;
+import com.kov.techuserservice.entity.RefreshToken;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -25,4 +25,11 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     @Modifying
     @Query("update RefreshToken rt set rt.revoked = true where rt.token = :token")
     void revokeByToken(@Param("token") String token);
+
+    /**
+     * Детерминированное удаление токенов пользователя.
+     * Дубль защиты к {@code ON DELETE CASCADE} в миграции V1: работает и там,
+     * где FK-каскада нет (например, ручная схема), и делает намерение явным.
+     */
+    void deleteByUser_Id(Long userId);
 }

@@ -1,6 +1,5 @@
-package com.kov.techuserservice.model;
+package com.kov.techuserservice.entity;
 
-import com.kov.techuserservice.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 

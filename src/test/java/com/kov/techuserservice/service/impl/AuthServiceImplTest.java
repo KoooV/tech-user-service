@@ -11,7 +11,7 @@ import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.AuthMapper;
-import com.kov.techuserservice.model.RefreshToken;
+import com.kov.techuserservice.entity.RefreshToken;
 import com.kov.techuserservice.security.JwtConfig;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
 import com.kov.techuserservice.service.JwtService;

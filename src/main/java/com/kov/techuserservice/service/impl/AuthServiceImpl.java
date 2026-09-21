@@ -9,10 +9,11 @@ import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.exception.DuplicateEmailException;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.AuthMapper;
-import com.kov.techuserservice.model.RefreshToken;
+import com.kov.techuserservice.entity.RefreshToken;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
 import com.kov.techuserservice.service.AuthService;
 import com.kov.techuserservice.service.JwtService;
@@ -60,7 +61,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponseDTO register(UserRequestDTO request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new SecurityException("Email already in use: " + request.getEmail());
+            throw new DuplicateEmailException("Email already in use: " + request.getEmail());
         }
         User user = new User();
         user.setFirstName(request.getFirstName());

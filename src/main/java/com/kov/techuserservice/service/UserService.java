@@ -29,6 +29,13 @@ public interface UserService {
 
     UserResponseDTO toggleActive(Long id);
 
+    /**
+     * Полный сброс пароля: генерирует временный пароль, сохраняет его хеш,
+     * отзывает все refresh-токены и отправляет уведомление через
+     * {@link NotificationService} (контракт зоны notification-сервиса).
+     * Временный пароль в открытом виде уходит только в уведомление,
+     * в REST-ответах и логах не возвращается.
+     */
     void resetPassword(Long id);
 
     UserResponseDTO getCurrentUser();
