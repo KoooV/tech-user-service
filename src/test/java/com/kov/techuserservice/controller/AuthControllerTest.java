@@ -5,8 +5,8 @@ import com.kov.techuserservice.dto.auth.AuthRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthResponseDTO;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.dto.user.UserResponseDTO;
-import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.service.AuthService;
+import com.kov.techuserservice.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +32,7 @@ class AuthControllerTest {
     private AuthService authService;
 
     @Mock
-    private UserMapper userMapper;
+    private UserService userService;
 
     @InjectMocks
     private AuthController authController;
@@ -102,7 +102,11 @@ class AuthControllerTest {
 
     @Test
     void logout_ShouldReturnOkResponse() throws Exception {
+        when(authService.getCurrentUserId()).thenReturn(1L);
+
         mockMvc.perform(post("/api/auth/logout"))
                 .andExpect(status().isOk());
+
+        verify(authService, times(1)).logout(1L);
     }
 }

@@ -3,9 +3,11 @@ package com.kov.techuserservice.service.impl;
 import com.kov.techuserservice.dto.auth.AuthRefreshRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthRequestDTO;
 import com.kov.techuserservice.dto.auth.AuthResponseDTO;
+import com.kov.techuserservice.dto.enums.RoleName;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
+import com.kov.techuserservice.entity.repository.RoleRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
@@ -22,11 +24,13 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Collections;
+import java.util.HashSet;
 
 @Slf4j
 @Service
@@ -34,6 +38,7 @@ import java.util.Collections;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuthMapper authMapper;
     private final PasswordEncoderImpl passwordEncoder;
@@ -53,6 +58,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponseDTO register(UserRequestDTO request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new SecurityException("Email already in use: " + request.getEmail());
+        }
         User user = new User();
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
@@ -60,7 +68,10 @@ public class AuthServiceImpl implements AuthService {
         user.setPhone(request.getPhone());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setActive(true);
-        user.setRoles(Collections.emptySet());
+        roleRepository.findByName(RoleName.USER).ifPresentOrElse(
+                role -> user.setRoles(new HashSet<>(java.util.Set.of(role))),
+                () -> user.setRoles(new HashSet<>())
+        );
         User saved = userRepository.save(user);
 
         Instant now = Instant.now();
@@ -177,7 +188,24 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public java.util.UUID getCurrentUserId() {
-        throw new UnsupportedOperationException("Метод getCurrentUserId еще не реализован");
+    public Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new SecurityException("User is not authenticated");
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User user) {
+            return user.getId();
+        }
+        if (principal instanceof UserDetails userDetails) {
+            return userRepository.findByEmail(userDetails.getUsername())
+                    .map(User::getId)
+                    .orElseThrow(() -> new UserNotFoundException("User not found: " + userDetails.getUsername()));
+        }
+        try {
+            return Long.valueOf(authentication.getName());
+        } catch (NumberFormatException e) {
+            throw new SecurityException("Unable to resolve current user");
+        }
     }
 }
