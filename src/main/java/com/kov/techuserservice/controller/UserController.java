@@ -56,6 +56,12 @@ public class UserController {
         return ResponseEntity.ok(userService.assignRole(id, request));
     }
 
+    @DeleteMapping("/{id}/role")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<UserResponseDTO> removeRole(@PathVariable Long id, @Valid @RequestBody RoleUpdateDTO request) {
+        return ResponseEntity.ok(userService.removeRole(id, request));
+    }
+
     @PutMapping("/{id}/active")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<UserResponseDTO> toggleActive(@PathVariable Long id) {

@@ -5,15 +5,14 @@ import com.kov.techuserservice.dto.role.RoleUpdateDTO;
 import com.kov.techuserservice.dto.user.UpdateUserRequestDTO;
 import com.kov.techuserservice.dto.user.UserRequestDTO;
 import com.kov.techuserservice.dto.user.UserResponseDTO;
-import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
-import com.kov.techuserservice.entity.repository.RoleRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
+import com.kov.techuserservice.service.RoleService;
 import com.kov.techuserservice.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,13 +24,15 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
+    private final RoleService roleService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserMapper userMapper;
     private final PasswordEncoderImpl passwordEncoder;
@@ -117,16 +118,34 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDTO assignRole(Long id, RoleUpdateDTO request) {
         User user = findUserOrThrow(id);
-        Role role = roleRepository.findByName(request.getName())
+        var role = roleService.findByName(request.getName())
                 .orElseThrow(() -> new UserNotFoundException("Role not found: " + request.getName()));
-        // Не затираем существующие роли: роль добавляется к уже назначенным.
+        // Merge-семантика: роль добавляется к уже назначенным, существующие не затираются.
         // Set.of(role) здесь был багом: immutable + потеря всех предыдущих ролей.
         if (user.getRoles() == null) {
-            user.setRoles(new java.util.HashSet<>());
+            user.setRoles(new HashSet<>());
         }
         user.getRoles().add(role);
         User saved = userRepository.save(user);
         log.info("Role {} assigned to user {} (roles now: {})", request.getName(), id, user.getRoles().size());
+        return userMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public UserResponseDTO removeRole(Long id, RoleUpdateDTO request) {
+        User user = findUserOrThrow(id);
+        var role = roleService.findByName(request.getName())
+                .orElseThrow(() -> new UserNotFoundException("Role not found: " + request.getName()));
+        if (user.getRoles() == null || !user.getRoles().contains(role)) {
+            throw new UserNotFoundException("User " + id + " does not have role: " + request.getName());
+        }
+        if (user.getRoles().size() <= 1) {
+            throw new SecurityException("Cannot remove the last role of user " + id);
+        }
+        user.getRoles().remove(role);
+        User saved = userRepository.save(user);
+        log.info("Role {} removed from user {} (roles now: {})", request.getName(), id, user.getRoles().size());
         return userMapper.toResponse(saved);
     }
 

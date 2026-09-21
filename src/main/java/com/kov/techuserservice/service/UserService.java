@@ -21,6 +21,12 @@ public interface UserService {
 
     UserResponseDTO assignRole(Long id, RoleUpdateDTO request);
 
+    /**
+     * Снять роль с пользователя (add-remove пара к {@link #assignRole}).
+     * Нельзя снять последнюю роль — у пользователя всегда остаётся минимум одна.
+     */
+    UserResponseDTO removeRole(Long id, RoleUpdateDTO request);
+
     UserResponseDTO toggleActive(Long id);
 
     void resetPassword(Long id);
