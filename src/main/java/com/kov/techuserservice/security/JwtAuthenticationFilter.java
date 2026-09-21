@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -37,6 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            putCurrentUserIdToMdc();
             filterChain.doFilter(request, response);
             return;
         }
@@ -49,11 +51,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(BEARER_PREFIX.length()).trim();
         if (token.isBlank()) {
+            MDC.remove(com.kov.techuserservice.observability.MdcLoggingFilter.USER_ID_KEY);
             filterChain.doFilter(request, response);
             return;
         }
 
         if (!jwtService.tokenIsValid(token)) {
+            MDC.remove(com.kov.techuserservice.observability.MdcLoggingFilter.USER_ID_KEY);
             filterChain.doFilter(request, response);
             return;
         }
@@ -72,10 +76,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            // P2 Observability: трассировка — userId в MDC для всех последующих логов запроса.
+            MDC.put(com.kov.techuserservice.observability.MdcLoggingFilter.USER_ID_KEY, String.valueOf(userId));
         } catch (Exception e) {
+            MDC.remove(com.kov.techuserservice.observability.MdcLoggingFilter.USER_ID_KEY);
             log.debug("JWT authentication failed: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void putCurrentUserIdToMdc() {
+        try {
+            var authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || authentication.getPrincipal() == null) {
+                return;
+            }
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof com.kov.techuserservice.entity.User user && user.getId() != null) {
+                MDC.put(com.kov.techuserservice.observability.MdcLoggingFilter.USER_ID_KEY,
+                        String.valueOf(user.getId()));
+            }
+        } catch (Exception e) {
+            log.debug("MDC userId propagation failed: {}", e.getMessage());
+        }
     }
 }

@@ -20,6 +20,7 @@ import com.kov.techuserservice.service.JwtService;
 import com.kov.techuserservice.service.RoleService;
 import com.kov.techuserservice.security.JwtConfig;
 import io.jsonwebtoken.Claims;
+import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -59,6 +60,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @Timed(value = "auth.register", description = "Time taken to register a new user")
     public AuthResponseDTO register(UserRequestDTO request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateEmailException("Email already in use: " + request.getEmail());
@@ -96,6 +98,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @Timed(value = "auth.authenticate", description = "Time taken to authenticate a user")
     public AuthResponseDTO authenticate(AuthRequestDTO request) {
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -134,6 +137,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @Timed(value = "auth.logout", description = "Time taken to logout a user")
     public void logout(Long userId) {
         refreshTokenRepository.revokeAllByUserId(userId);
         log.info("User {} logged out: all refresh tokens revoked", userId);
@@ -141,6 +145,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @Timed(value = "auth.refresh", description = "Time taken to refresh access token")
     public AuthResponseDTO refreshToken(AuthRefreshRequestDTO request) {
         if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
             throw new SecurityException("Refresh token is empty");
