@@ -8,10 +8,12 @@ import com.kov.techuserservice.dto.user.UserResponseDTO;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.exception.DuplicateEmailException;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
+import com.kov.techuserservice.service.NotificationService;
 import com.kov.techuserservice.service.RoleService;
 import com.kov.techuserservice.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,12 @@ public class UserServiceImpl implements UserService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserMapper userMapper;
     private final PasswordEncoderImpl passwordEncoder;
+    private final NotificationService notificationService;
+
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
+    private static final String TEMP_PASSWORD_ALPHABET =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+    private static final int TEMP_PASSWORD_LENGTH = 16;
 
     @Override
     @Transactional(readOnly = true)
@@ -63,7 +71,7 @@ public class UserServiceImpl implements UserService {
     public UserResponseDTO updateUser(Long id, UserRequestDTO request) {
         User user = findUserOrThrow(id);
         if (!user.getEmail().equals(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
-            throw new SecurityException("Email already in use: " + request.getEmail());
+            throw new DuplicateEmailException("Email already in use: " + request.getEmail());
         }
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
@@ -86,7 +94,7 @@ public class UserServiceImpl implements UserService {
         }
         if (request.getEmail() != null && !request.getEmail().equals(user.getEmail())) {
             if (userRepository.existsByEmail(request.getEmail())) {
-                throw new SecurityException("Email already in use: " + request.getEmail());
+                throw new DuplicateEmailException("Email already in use: " + request.getEmail());
             }
             user.setEmail(request.getEmail());
         }
@@ -110,8 +118,13 @@ public class UserServiceImpl implements UserService {
         if (!userRepository.existsById(id)) {
             throw new UserNotFoundException("User not found with id: " + id);
         }
+        // Адреса удаляются каскадом JPA (User.addresses: CascadeType.ALL + orphanRemoval)
+        // + FK ON DELETE CASCADE в V1. Токены удаляем явно: у User нет OneToMany
+        // на RefreshToken, поэтому полагаться только на JPA-каскад нельзя;
+        // явный delete + ON DELETE CASCADE в V1 дают двойную гарантию от висячих строк.
+        refreshTokenRepository.deleteByUser_Id(id);
         userRepository.deleteById(id);
-        log.info("User {} deleted", id);
+        log.info("User {} deleted (tokens and addresses cascaded)", id);
     }
 
     @Override
@@ -163,11 +176,30 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void resetPassword(Long id) {
         User user = findUserOrThrow(id);
+        // Полный сброс: новый временный пароль + инвалидация сессий + уведомление.
+        // Доставка пользователю — зона notification-сервиса, контракт:
+        // NotificationService.sendPasswordReset (см. dto.notification).
+        String temporaryPassword = generateTemporaryPassword();
+        user.setPassword(passwordEncoder.encode(temporaryPassword));
+        userRepository.save(user);
         // Инвалидируем все refresh-токены, чтобы завершить активные сессии.
-        // Генерация/отправка нового пароля — зона интеграций (notification service),
-        // здесь фиксируем сам факт сброса.
         refreshTokenRepository.revokeAllByUserId(user.getId());
-        log.info("Password reset requested for user {}", id);
+        notificationService.sendPasswordReset(
+                com.kov.techuserservice.dto.notification.PasswordResetNotification.builder()
+                        .userId(user.getId())
+                        .email(user.getEmail())
+                        .temporaryPassword(temporaryPassword)
+                        .build());
+        // Секрет в лог не пишем.
+        log.info("Password reset completed for user {}", id);
+    }
+
+    static String generateTemporaryPassword() {
+        StringBuilder sb = new StringBuilder(TEMP_PASSWORD_LENGTH);
+        for (int i = 0; i < TEMP_PASSWORD_LENGTH; i++) {
+            sb.append(TEMP_PASSWORD_ALPHABET.charAt(SECURE_RANDOM.nextInt(TEMP_PASSWORD_ALPHABET.length())));
+        }
+        return sb.toString();
     }
 
     @Override
@@ -188,8 +220,11 @@ public class UserServiceImpl implements UserService {
             throw new SecurityException("User is not authenticated");
         }
         Object principal = authentication.getPrincipal();
-        if (principal instanceof User user) {
-            return user;
+        if (principal instanceof User user && user.getId() != null) {
+            // Principal из JWT-фильтра — detached (загружен вне транзакции):
+            // ленивые коллекции (addresses) на нём бросают LazyInitializationException
+            // при open-in-view=false. Перечитываем в текущей транзакции.
+            return findUserOrThrow(user.getId());
         }
         if (principal instanceof UserDetails userDetails) {
             return userRepository.findByEmail(userDetails.getUsername())

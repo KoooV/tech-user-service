@@ -10,10 +10,12 @@ import com.kov.techuserservice.entity.Role;
 import com.kov.techuserservice.entity.User;
 import com.kov.techuserservice.entity.repository.RefreshTokenRepository;
 import com.kov.techuserservice.entity.repository.UserRepository;
+import com.kov.techuserservice.exception.DuplicateEmailException;
 import com.kov.techuserservice.exception.SecurityException;
 import com.kov.techuserservice.exception.UserNotFoundException;
 import com.kov.techuserservice.mapper.UserMapper;
 import com.kov.techuserservice.security.PasswordEncoderImpl;
+import com.kov.techuserservice.service.NotificationService;
 import com.kov.techuserservice.service.RoleService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +56,9 @@ class UserServiceImplTest {
 
     @Mock
     private PasswordEncoderImpl passwordEncoder;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -150,7 +155,7 @@ class UserServiceImplTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
-        assertThrows(SecurityException.class, () -> userService.updateUser(1L, request));
+        assertThrows(DuplicateEmailException.class, () -> userService.updateUser(1L, request));
         verify(userRepository, never()).save(any());
     }
 
@@ -211,7 +216,7 @@ class UserServiceImplTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
-        assertThrows(SecurityException.class, () -> userService.partialUpdateUser(1L, request));
+        assertThrows(DuplicateEmailException.class, () -> userService.partialUpdateUser(1L, request));
         verify(userRepository, never()).save(any());
     }
 
@@ -221,6 +226,7 @@ class UserServiceImplTest {
 
         userService.deleteUser(1L);
 
+        verify(refreshTokenRepository, times(1)).deleteByUser_Id(1L);
         verify(userRepository, times(1)).deleteById(1L);
     }
 
@@ -357,10 +363,15 @@ class UserServiceImplTest {
     @Test
     void resetPassword_ExistingUser_ShouldRevokeTokens() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(passwordEncoder.encode(any())).thenReturn("$2a$10$encodedTemp");
+        when(userRepository.save(testUser)).thenReturn(testUser);
 
         userService.resetPassword(1L);
 
+        assertEquals("$2a$10$encodedTemp", testUser.getPassword());
+        verify(userRepository, times(1)).save(testUser);
         verify(refreshTokenRepository, times(1)).revokeAllByUserId(1L);
+        verify(notificationService, times(1)).sendPasswordReset(any());
     }
 
     @Test
@@ -369,16 +380,21 @@ class UserServiceImplTest {
 
         assertThrows(UserNotFoundException.class, () -> userService.resetPassword(42L));
         verify(refreshTokenRepository, never()).revokeAllByUserId(any());
+        verify(notificationService, never()).sendPasswordReset(any());
     }
 
     @Test
-    void getCurrentUser_PrincipalIsUserEntity_ShouldReturnDtoWithoutQuery() {
+    void getCurrentUser_PrincipalIsUserEntity_ShouldReattachViaRepository() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(testUser, null, List.of()));
+        // Principal из фильтра detached: сервис перечитывает пользователя в своей
+        // транзакции, иначе ленивые коллекции падают с LazyInitializationException.
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         UserResponseDTO dto = UserResponseDTO.builder().id(1L).email("test@example.com").build();
         when(userMapper.toResponse(testUser)).thenReturn(dto);
 
         assertEquals(dto, userService.getCurrentUser());
+        verify(userRepository, times(1)).findById(1L);
         verify(userRepository, never()).findByEmail(any());
     }
 
