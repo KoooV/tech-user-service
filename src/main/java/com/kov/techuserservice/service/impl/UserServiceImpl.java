@@ -220,8 +220,11 @@ public class UserServiceImpl implements UserService {
             throw new SecurityException("User is not authenticated");
         }
         Object principal = authentication.getPrincipal();
-        if (principal instanceof User user) {
-            return user;
+        if (principal instanceof User user && user.getId() != null) {
+            // Principal из JWT-фильтра — detached (загружен вне транзакции):
+            // ленивые коллекции (addresses) на нём бросают LazyInitializationException
+            // при open-in-view=false. Перечитываем в текущей транзакции.
+            return findUserOrThrow(user.getId());
         }
         if (principal instanceof UserDetails userDetails) {
             return userRepository.findByEmail(userDetails.getUsername())

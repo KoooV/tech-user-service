@@ -57,6 +57,10 @@ public class JwtServiceImpl implements JwtService {
         ensureSecretKey();
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
+                // jti обязателен: без него токены, выпущенные в одну миллисекунду
+                // для одного userId, байт-в-байт идентичны (детерминированный HMAC),
+                // и findByToken падает с NonUniqueResult → 500 на /refresh.
+                .setId(java.util.UUID.randomUUID().toString())
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(expiration))
                 .signWith(secretKey)

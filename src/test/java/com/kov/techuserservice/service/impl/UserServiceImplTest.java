@@ -384,13 +384,17 @@ class UserServiceImplTest {
     }
 
     @Test
-    void getCurrentUser_PrincipalIsUserEntity_ShouldReturnDtoWithoutQuery() {
+    void getCurrentUser_PrincipalIsUserEntity_ShouldReattachViaRepository() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(testUser, null, List.of()));
+        // Principal из фильтра detached: сервис перечитывает пользователя в своей
+        // транзакции, иначе ленивые коллекции падают с LazyInitializationException.
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         UserResponseDTO dto = UserResponseDTO.builder().id(1L).email("test@example.com").build();
         when(userMapper.toResponse(testUser)).thenReturn(dto);
 
         assertEquals(dto, userService.getCurrentUser());
+        verify(userRepository, times(1)).findById(1L);
         verify(userRepository, never()).findByEmail(any());
     }
 
